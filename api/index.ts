@@ -2,7 +2,6 @@ import express from "express";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
-import { createServer as createViteServer } from "vite";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { Groq } from "groq-sdk";
@@ -19,6 +18,13 @@ function cleanJsonResponse(text: string): string {
   const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/```([\s\S]*?)```/);
   if (jsonMatch) return jsonMatch[1].trim();
   return text.trim();
+}
+
+// Helper to identify quota/rate limit errors
+function isQuotaError(error: any): boolean {
+  const msg = (error.message || "").toLowerCase();
+  const status = error.status || error.statusCode || (error.response && error.response.status);
+  return status === 429 || msg.includes("quota") || msg.includes("rate limit") || msg.includes("limit exceeded") || msg.includes("insufficient_quota");
 }
 
 // --- Debug & Health Endpoints ---
@@ -49,25 +55,45 @@ app.post("/api/ai/proxy", async (req, res) => {
       const apiKey = clientApiKey || process.env.OPENAI_API_KEY;
       if (!apiKey) return res.status(400).json({ error: "OpenAI API Key missing." });
       const openai = new OpenAI({ apiKey });
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" },
-      });
-      const content = cleanJsonResponse(response.choices[0].message.content || "{}");
-      return res.json(JSON.parse(content));
+      try {
+        const response = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [{ role: "user", content: prompt }],
+          response_format: { type: "json_object" },
+        });
+        const content = cleanJsonResponse(response.choices[0].message.content || "{}");
+        return res.json(JSON.parse(content));
+      } catch (oaError: any) {
+        if (isQuotaError(oaError)) {
+          return res.status(429).json({ 
+            error: "AI Quota Exceeded", 
+            message: "Your OpenAI API quota has been exhausted. Please check your billing or try again later." 
+          });
+        }
+        throw oaError;
+      }
     }
     if (provider === "Anthropic") {
       const apiKey = clientApiKey || process.env.ANTHROPIC_API_KEY;
       if (!apiKey) return res.status(400).json({ error: "Anthropic API Key missing." });
       const anthropic = new Anthropic({ apiKey });
-      const response = await anthropic.messages.create({
-        model: "claude-3-5-sonnet-20240620",
-        max_tokens: 4096,
-        messages: [{ role: "user", content: prompt + "\n\nRespond ONLY with a valid JSON object." }],
-      });
-      const content = response.content[0].type === 'text' ? response.content[0].text : "";
-      return res.json(JSON.parse(cleanJsonResponse(content)));
+      try {
+        const response = await anthropic.messages.create({
+          model: "claude-3-5-sonnet-20240620",
+          max_tokens: 4096,
+          messages: [{ role: "user", content: prompt + "\n\nRespond ONLY with a valid JSON object." }],
+        });
+        const content = response.content[0].type === 'text' ? response.content[0].text : "";
+        return res.json(JSON.parse(cleanJsonResponse(content)));
+      } catch (antError: any) {
+        if (isQuotaError(antError)) {
+          return res.status(429).json({ 
+            error: "AI Quota Exceeded", 
+            message: "Your Anthropic API quota has been exhausted. Please check your billing or try again later." 
+          });
+        }
+        throw antError;
+      }
     }
     if (provider === "Groq") {
       const apiKey = clientApiKey || process.env.GROQ_API_KEY;
@@ -91,6 +117,12 @@ app.post("/api/ai/proxy", async (req, res) => {
         return res.json(JSON.parse(content));
       } catch (groqError: any) {
         console.error(`[${requestId}] Groq API Error:`, groqError);
+        if (isQuotaError(groqError)) {
+          return res.status(429).json({ 
+            error: "AI Quota Exceeded", 
+            message: "Your Groq API quota has been exhausted or you are being rate limited. Please check your billing or try again later." 
+          });
+        }
         return res.status(502).json({ 
           error: `Groq API Error: ${groqError.message}`,
           details: groqError.response?.data || groqError.stack
@@ -114,6 +146,7 @@ async function startServer() {
 
   // --- Static Files & Vite Integration ---
   if (isDev) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

@@ -550,8 +550,17 @@ const App: React.FC = () => {
     const downloadDebugReport = async () => {
         addLog("Generating debug report...");
         try {
-            const debugResponse = await fetch('/api/debug');
-            const debugData = await debugResponse.json();
+            let debugData = { status: "unavailable", error: "Fetch failed" };
+            try {
+                const debugResponse = await fetch('/api/debug');
+                if (debugResponse.ok) {
+                    debugData = await debugResponse.json();
+                } else {
+                    debugData = { status: "error", error: `HTTP ${debugResponse.status}` };
+                }
+            } catch (e) {
+                console.warn("Could not reach debug endpoint", e);
+            }
             
             const report = {
                 timestamp: new Date().toISOString(),
@@ -583,6 +592,13 @@ const App: React.FC = () => {
             addLog("Debug report downloaded. Please share this with the developer.");
         } catch (error) {
             addLog(`Error generating debug report: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            // Fallback: download logs at least
+            const blob = new Blob([logs.join('\n')], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `bioid-logs-fallback-${new Date().getTime()}.txt`;
+            a.click();
         }
     };
 
