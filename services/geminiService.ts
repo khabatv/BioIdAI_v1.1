@@ -196,12 +196,26 @@ export const fetchEntityInfo = async (
             }),
         });
 
+        const responseText = await response.text();
+        
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `Server error: ${response.status}`);
+            let errorMessage = `Server error: ${response.status}`;
+            try {
+                const errorData = JSON.parse(responseText);
+                errorMessage = errorData.error || errorMessage;
+            } catch (e) {
+                // If not JSON, use the raw text or status
+                errorMessage = responseText || errorMessage;
+            }
+            throw new Error(errorMessage);
         }
 
-        return await response.json() as EntityResolutionResponse;
+        try {
+            return JSON.parse(responseText) as EntityResolutionResponse;
+        } catch (e) {
+            console.error("Failed to parse response JSON:", responseText);
+            throw new Error("The server returned an invalid response format. Please try again.");
+        }
     } catch (error) {
         console.error(`Error calling ${provider} via proxy:`, error);
         throw error;

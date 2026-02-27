@@ -11,61 +11,69 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.use(cors());
+app.use(express.json());
+
+// Helper to clean JSON from AI responses (handles markdown blocks)
+function cleanJsonResponse(text: string): string {
+  const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/```([\s\S]*?)```/);
+  if (jsonMatch) return jsonMatch[1].trim();
+  return text.trim();
+}
+
+// --- Computational Provider Endpoints ---
+app.post("/api/ai/proxy", async (req, res) => {
+  const { provider, apiKey: clientApiKey, prompt } = req.body;
+  try {
+    if (provider === "OpenAI") {
+      const apiKey = clientApiKey || process.env.OPENAI_API_KEY;
+      if (!apiKey) return res.status(400).json({ error: "OpenAI API Key missing." });
+      const openai = new OpenAI({ apiKey });
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+      });
+      const content = cleanJsonResponse(response.choices[0].message.content || "{}");
+      return res.json(JSON.parse(content));
+    }
+    if (provider === "Anthropic") {
+      const apiKey = clientApiKey || process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) return res.status(400).json({ error: "Anthropic API Key missing." });
+      const anthropic = new Anthropic({ apiKey });
+      const response = await anthropic.messages.create({
+        model: "claude-3-5-sonnet-20240620",
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt + "\n\nRespond ONLY with a valid JSON object." }],
+      });
+      const content = response.content[0].type === 'text' ? response.content[0].text : "";
+      return res.json(JSON.parse(cleanJsonResponse(content)));
+    }
+    if (provider === "Groq") {
+      const apiKey = clientApiKey || process.env.GROQ_API_KEY;
+      if (!apiKey) return res.status(400).json({ error: "Groq API Key missing." });
+      const groq = new Groq({ apiKey });
+      const response = await groq.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { role: "system", content: "You are a biological data assistant. You MUST respond ONLY with a valid JSON object. Do not include any text before or after the JSON." },
+          { role: "user", content: prompt }
+        ],
+        response_format: { type: "json_object" },
+      });
+      const content = cleanJsonResponse(response.choices[0].message.content || "{}");
+      return res.json(JSON.parse(content));
+    }
+    res.status(400).json({ error: `Provider ${provider} not supported.` });
+  } catch (error: any) {
+    console.error(`Proxy error (${provider}):`, error);
+    res.status(500).json({ error: error.message || "Internal Server Error" });
+  }
+});
 
 async function startServer() {
   const PORT = process.env.PORT || 3000;
   const isDev = process.env.NODE_ENV === "development";
-
-  app.use(cors());
-  app.use(express.json());
-
-  // --- Computational Provider Endpoints ---
-  app.post("/api/ai/proxy", async (req, res) => {
-    const { provider, apiKey: clientApiKey, prompt } = req.body;
-    try {
-      if (provider === "OpenAI") {
-        const apiKey = clientApiKey || process.env.OPENAI_API_KEY;
-        if (!apiKey) return res.status(400).json({ error: "OpenAI API Key missing." });
-        const openai = new OpenAI({ apiKey });
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [{ role: "user", content: prompt }],
-          response_format: { type: "json_object" },
-        });
-        return res.json(JSON.parse(response.choices[0].message.content || "{}"));
-      }
-      if (provider === "Anthropic") {
-        const apiKey = clientApiKey || process.env.ANTHROPIC_API_KEY;
-        if (!apiKey) return res.status(400).json({ error: "Anthropic API Key missing." });
-        const anthropic = new Anthropic({ apiKey });
-        const response = await anthropic.messages.create({
-          model: "claude-3-5-sonnet-20240620",
-          max_tokens: 4096,
-          messages: [{ role: "user", content: prompt + "\n\nRespond ONLY with a valid JSON object." }],
-        });
-        const content = response.content[0].type === 'text' ? response.content[0].text : "";
-        return res.json(JSON.parse(content));
-      }
-      if (provider === "Groq") {
-        const apiKey = clientApiKey || process.env.GROQ_API_KEY;
-        if (!apiKey) return res.status(400).json({ error: "Groq API Key missing." });
-        const groq = new Groq({ apiKey });
-        const response = await groq.chat.completions.create({
-          model: "llama-3.3-70b-versatile",
-          messages: [
-            { role: "system", content: "You are a biological data assistant. You MUST respond ONLY with a valid JSON object. Do not include any text before or after the JSON." },
-            { role: "user", content: prompt }
-          ],
-          response_format: { type: "json_object" },
-        });
-        const content = response.choices[0].message.content || "{}";
-        return res.json(JSON.parse(content));
-      }
-      res.status(400).json({ error: `Provider ${provider} not supported.` });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Internal Server Error" });
-    }
-  });
 
   // --- Static Files & Vite Integration ---
   if (isDev) {
