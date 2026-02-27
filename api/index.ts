@@ -29,6 +29,13 @@ function isQuotaError(error: any): boolean {
 
 // --- Debug & Health Endpoints ---
 app.get("/api/debug", (req, res) => {
+  const maskKey = (key?: string) => {
+    if (!key) return "not_set";
+    const trimmed = key.trim();
+    if (trimmed.length < 8) return "too_short";
+    return `${trimmed.substring(0, 4)}...${trimmed.substring(trimmed.length - 4)}`;
+  };
+
   res.json({
     status: "ok",
     env: {
@@ -39,6 +46,11 @@ app.get("/api/debug", (req, res) => {
       HAS_OPENAI_KEY: !!process.env.OPENAI_API_KEY,
       HAS_ANTHROPIC_KEY: !!process.env.ANTHROPIC_API_KEY,
     },
+    key_previews: {
+      GROQ: maskKey(process.env.GROQ_API_KEY),
+      OPENAI: maskKey(process.env.OPENAI_API_KEY),
+      ANTHROPIC: maskKey(process.env.ANTHROPIC_API_KEY),
+    },
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
@@ -48,11 +60,18 @@ app.get("/api/debug", (req, res) => {
 app.post("/api/ai/proxy", async (req, res) => {
   const { provider, apiKey: clientApiKey, prompt } = req.body;
   const requestId = Math.random().toString(36).substring(7);
+  
+  // Use client key if provided (and not empty), otherwise fallback to server env
+  const getApiKey = (envVar?: string) => {
+    const key = (clientApiKey && clientApiKey.trim().length > 0) ? clientApiKey : envVar;
+    return key ? key.trim() : undefined;
+  };
+
   console.log(`[${requestId}] Proxy Request: ${provider}`);
 
   try {
     if (provider === "OpenAI") {
-      const apiKey = clientApiKey || process.env.OPENAI_API_KEY;
+      const apiKey = getApiKey(process.env.OPENAI_API_KEY);
       if (!apiKey) return res.status(400).json({ error: "OpenAI API Key missing." });
       const openai = new OpenAI({ apiKey });
       try {
@@ -74,7 +93,7 @@ app.post("/api/ai/proxy", async (req, res) => {
       }
     }
     if (provider === "Anthropic") {
-      const apiKey = clientApiKey || process.env.ANTHROPIC_API_KEY;
+      const apiKey = getApiKey(process.env.ANTHROPIC_API_KEY);
       if (!apiKey) return res.status(400).json({ error: "Anthropic API Key missing." });
       const anthropic = new Anthropic({ apiKey });
       try {
@@ -96,10 +115,10 @@ app.post("/api/ai/proxy", async (req, res) => {
       }
     }
     if (provider === "Groq") {
-      const apiKey = clientApiKey || process.env.GROQ_API_KEY;
+      const apiKey = getApiKey(process.env.GROQ_API_KEY);
       if (!apiKey) {
         console.error(`[${requestId}] Groq Error: API Key missing`);
-        return res.status(400).json({ error: "Groq API Key missing. Please check your Vercel environment variables." });
+        return res.status(400).json({ error: "Groq API Key missing. Please check your Vercel environment variables or UI configuration." });
       }
       
       const groq = new Groq({ apiKey });
@@ -123,7 +142,7 @@ app.post("/api/ai/proxy", async (req, res) => {
             message: "Your Groq API quota has been exhausted or you are being rate limited. Please check your billing or try again later." 
           });
         }
-        return res.status(502).json({ 
+        return res.status(groqError.status || 502).json({ 
           error: `Groq API Error: ${groqError.message}`,
           details: groqError.response?.data || groqError.stack
         });
