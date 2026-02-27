@@ -10,8 +10,9 @@ import { Groq } from "groq-sdk";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const app = express();
+
 async function startServer() {
-  const app = express();
   const PORT = process.env.PORT || 3000;
   const isDev = process.env.NODE_ENV === "development";
 
@@ -20,9 +21,11 @@ async function startServer() {
 
   // --- Computational Provider Endpoints ---
   app.post("/api/ai/proxy", async (req, res) => {
-    const { provider, apiKey, prompt } = req.body;
+    const { provider, apiKey: clientApiKey, prompt } = req.body;
     try {
       if (provider === "OpenAI") {
+        const apiKey = clientApiKey || process.env.OPENAI_API_KEY;
+        if (!apiKey) return res.status(400).json({ error: "OpenAI API Key missing." });
         const openai = new OpenAI({ apiKey });
         const response = await openai.chat.completions.create({
           model: "gpt-4o",
@@ -32,6 +35,8 @@ async function startServer() {
         return res.json(JSON.parse(response.choices[0].message.content || "{}"));
       }
       if (provider === "Anthropic") {
+        const apiKey = clientApiKey || process.env.ANTHROPIC_API_KEY;
+        if (!apiKey) return res.status(400).json({ error: "Anthropic API Key missing." });
         const anthropic = new Anthropic({ apiKey });
         const response = await anthropic.messages.create({
           model: "claude-3-5-sonnet-20240620",
@@ -42,6 +47,8 @@ async function startServer() {
         return res.json(JSON.parse(content));
       }
       if (provider === "Groq") {
+        const apiKey = clientApiKey || process.env.GROQ_API_KEY;
+        if (!apiKey) return res.status(400).json({ error: "Groq API Key missing." });
         const groq = new Groq({ apiKey });
         const response = await groq.chat.completions.create({
           model: "llama-3.3-70b-versatile",
@@ -81,8 +88,12 @@ async function startServer() {
   });
 }
 
-// START SERVER - REQUIRED FOR RENDER
-startServer().catch(err => {
-  console.error('Server startup failed:', err);
-  process.exit(1);
-});
+// START SERVER
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  startServer().catch(err => {
+    console.error('Server startup failed:', err);
+    process.exit(1);
+  });
+}
+
+export default app;

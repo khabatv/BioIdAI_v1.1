@@ -4,9 +4,12 @@ import { EntityResolutionResponse, ApiProvider, OntologyType } from "../types";
 // --- Resolution Implementation ---
 
 const getResolutionClient = (apiKey?: string) => {
-    const key = apiKey || process.env.API_KEY as string;
+    // In Vite/Vercel, environment variables for the client must be prefixed with VITE_
+    // We check both for maximum compatibility across environments
+    const key = apiKey || (import.meta as any).env.VITE_API_KEY || (typeof process !== 'undefined' ? process.env.API_KEY : undefined);
+    
     if (!key) {
-        throw new Error("API key is not provided. Please set it in the settings or environment variables.");
+        throw new Error("API key is not provided. Please set it in the settings or environment variables (VITE_API_KEY).");
     }
     return new GoogleGenAI({ apiKey: key });
 };
