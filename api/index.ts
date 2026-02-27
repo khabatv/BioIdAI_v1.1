@@ -21,9 +21,29 @@ function cleanJsonResponse(text: string): string {
   return text.trim();
 }
 
+// --- Debug & Health Endpoints ---
+app.get("/api/debug", (req, res) => {
+  res.json({
+    status: "ok",
+    env: {
+      NODE_ENV: process.env.NODE_ENV,
+      VERCEL: process.env.VERCEL,
+      HAS_GEMINI_KEY: !!process.env.GEMINI_API_KEY,
+      HAS_GROQ_KEY: !!process.env.GROQ_API_KEY,
+      HAS_OPENAI_KEY: !!process.env.OPENAI_API_KEY,
+      HAS_ANTHROPIC_KEY: !!process.env.ANTHROPIC_API_KEY,
+    },
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
 // --- Computational Provider Endpoints ---
 app.post("/api/ai/proxy", async (req, res) => {
   const { provider, apiKey: clientApiKey, prompt } = req.body;
+  const requestId = Math.random().toString(36).substring(7);
+  console.log(`[${requestId}] Proxy Request: ${provider}`);
+
   try {
     if (provider === "OpenAI") {
       const apiKey = clientApiKey || process.env.OPENAI_API_KEY;
@@ -51,23 +71,40 @@ app.post("/api/ai/proxy", async (req, res) => {
     }
     if (provider === "Groq") {
       const apiKey = clientApiKey || process.env.GROQ_API_KEY;
-      if (!apiKey) return res.status(400).json({ error: "Groq API Key missing." });
+      if (!apiKey) {
+        console.error(`[${requestId}] Groq Error: API Key missing`);
+        return res.status(400).json({ error: "Groq API Key missing. Please check your Vercel environment variables." });
+      }
+      
       const groq = new Groq({ apiKey });
-      const response = await groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: "You are a biological data assistant. You MUST respond ONLY with a valid JSON object. Do not include any text before or after the JSON." },
-          { role: "user", content: prompt }
-        ],
-        response_format: { type: "json_object" },
-      });
-      const content = cleanJsonResponse(response.choices[0].message.content || "{}");
-      return res.json(JSON.parse(content));
+      try {
+        // llama-3.1-8b-instant is much faster than 70b and less likely to hit Vercel's 10s timeout
+        const response = await groq.chat.completions.create({
+          model: "llama-3.1-8b-instant",
+          messages: [
+            { role: "system", content: "You are a biological data assistant. Respond ONLY with valid JSON." },
+            { role: "user", content: prompt }
+          ],
+          response_format: { type: "json_object" },
+        });
+        const content = cleanJsonResponse(response.choices[0].message.content || "{}");
+        return res.json(JSON.parse(content));
+      } catch (groqError: any) {
+        console.error(`[${requestId}] Groq API Error:`, groqError);
+        return res.status(502).json({ 
+          error: `Groq API Error: ${groqError.message}`,
+          details: groqError.response?.data || groqError.stack
+        });
+      }
     }
     res.status(400).json({ error: `Provider ${provider} not supported.` });
   } catch (error: any) {
-    console.error(`Proxy error (${provider}):`, error);
-    res.status(500).json({ error: error.message || "Internal Server Error" });
+    console.error(`[${requestId}] Global Proxy Error:`, error);
+    res.status(500).json({ 
+      error: "Internal Server Error", 
+      message: error.message,
+      requestId 
+    });
   }
 });
 

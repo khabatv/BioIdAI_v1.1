@@ -17,7 +17,8 @@ import {
   ChevronRight,
   Download,
   Info,
-  Database
+  Database,
+  Bug
 } from 'lucide-react';
 import { EntityType, EntityResult, ApiProvider, OntologyType, SessionState } from './types';
 import { fetchEntityInfo } from './services/geminiService';
@@ -546,6 +547,45 @@ const App: React.FC = () => {
         addLog(`Manual export generated: bioid-manual-export-${runId}.csv`);
     };
 
+    const downloadDebugReport = async () => {
+        addLog("Generating debug report...");
+        try {
+            const debugResponse = await fetch('/api/debug');
+            const debugData = await debugResponse.json();
+            
+            const report = {
+                timestamp: new Date().toISOString(),
+                app_version: "4.5.0-PRO",
+                client_logs: logs,
+                server_debug: debugData,
+                browser_info: {
+                    userAgent: navigator.userAgent,
+                    language: navigator.language,
+                    platform: navigator.platform
+                },
+                current_config: {
+                    provider: apiProvider,
+                    entityType,
+                    ontology,
+                    enableOntology
+                }
+            };
+
+            const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `bioid-debug-report-${new Date().getTime()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            addLog("Debug report downloaded. Please share this with the developer.");
+        } catch (error) {
+            addLog(`Error generating debug report: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    };
+
     const isProcessing = analysisPhase === 'initial' || analysisPhase === 'deep_searching';
     const failedCount = results.filter(r => r["Validation Issues"]).length;
 
@@ -1003,6 +1043,13 @@ const App: React.FC = () => {
                         <div className="text-[11px] text-slate-500 font-bold uppercase tracking-widest">
                             Developed by Khabat Vahabi | IGZ & SSP
                         </div>
+                        <button 
+                            onClick={downloadDebugReport}
+                            className="mt-4 text-[10px] text-slate-400 hover:text-indigo-500 transition-colors flex items-center space-x-1 uppercase tracking-tighter font-bold"
+                        >
+                            <Bug className="h-3 w-3" />
+                            <span>Generate Debug Report</span>
+                        </button>
                     </div>
                 </footer>
             </div>

@@ -110,55 +110,34 @@ const createPrompt = (
     
     if (isDeepSearch) {
         return `
-        You are an expert research assistant performing a deep, exhaustive search for a biological or chemical entity. A previous quick search failed to find it. You must now try harder, using alternative search strategies.
-
-        You MUST respond ONLY with a valid JSON object that conforms to the provided schema.
-
-        Entity Name to Analyze: "${originalName}"
-        User Provided Type Hint: "${entityTypeHint}"
-        Additional Background Context: "${backgroundInfo || 'None provided.'}"
-
-        Perform the following actions with maximum effort:
-        1. The name "${originalName}" might be misspelled, an obscure synonym, or an abbreviation. Brainstorm and search for alternative spellings and related terms.
-        2. Search across a WIDE range of databases. Do not give up easily. 
-           - For chemicals: PubChem, ChEMBL, KEGG, DrugBank.
-           - For proteins/genes/transcripts: UniProt, RefSeq, Ensembl, InterPro, NCBI Gene, HGNC.
-        3. Find its biological pathways (e.g., "Glycolysis").
-        4. Describe its biological function (e.g., "Enzyme catalysis").
-        5. Identify its cellular component/location (e.g., "Mitochondrion").
-        6. ${ontologyInstruction}
-        7. Retrieve any standard identifiers and direct links you can find. For UniProt, RefSeq, Ensembl, and InterPro, provide both the ID and the direct URL link.
-        8. If, after an exhaustive search, you still cannot find anything, populate 'validation_issues' with "Exhaustive search failed to find a match". Otherwise, provide as much information as you discovered.
-        9. Ensure all identifiers are cross-referenced and validated against multiple sources where possible.
-
-        Return your findings in the specified JSON format.
+        Expert research assistant: Exhaustive search for biological/chemical entity.
+        Entity: "${originalName}" | Hint: "${entityTypeHint}" | Context: "${backgroundInfo || 'None'}"
+        
+        Actions:
+        1. Correct spelling, brainstorm synonyms/abbreviations.
+        2. Search: PubChem, ChEMBL, KEGG, UniProt, RefSeq, Ensembl, InterPro.
+        3. Find: Pathways, Function, Cellular Component.
+        4. ${ontologyInstruction}
+        5. Provide IDs and direct URLs for UniProt, RefSeq, Ensembl, InterPro.
+        6. If not found, set 'validation_issues' to "Exhaustive search failed".
+        
+        JSON ONLY.
         `;
     }
     return `
-    You are an expert chemist and biologist acting as a data aggregation service. Your task is to analyze a given entity name, correct it, and find its identifiers, pathways, function, and cellular location from scientific databases.
-
-    You MUST respond ONLY with a valid JSON object that conforms to the provided schema. Do not include any explanatory text, markdown formatting, or anything outside the JSON object.
-
-    Entity Name to Analyze: "${originalName}"
-    User Provided Type Hint: "${entityTypeHint}"
-    Additional Background Context: "${backgroundInfo || 'None provided.'}"
-
-    Based on the entity name and context, perform the following actions:
-    1. Correct any spelling errors in the entity name.
-    2. Determine the entity's type (e.g., 'chemical', 'protein', 'gene'). Prioritize the user's hint but correct it if it's clearly wrong.
-    3. Find common synonyms for the corrected name.
-    4. Search relevant databases:
-       - Chemicals: PubChem, ChEMBL, KEGG.
-       - Proteins/Genes: UniProt, RefSeq, Ensembl, InterPro, NCBI Gene.
-    5. Retrieve standard identifiers and direct links. For biological entities, you MUST prioritize finding UniProt, RefSeq, Ensembl, and InterPro IDs and their corresponding direct links.
-    6. Find its biological pathways (e.g., "Glycolysis", "MAPK signaling pathway").
-    7. Describe its biological function (e.g., "Enzyme catalysis", "Transcription factor").
-    8. Identify its cellular component/location (e.g., "Mitochondrion", "Nucleus", "Cytoplasm").
-    9. ${ontologyInstruction}
-    10. If you cannot find the entity, populate 'validation_issues' with a descriptive message like "No definitive IDs found in any database". Otherwise, leave it as an empty array and fill the other fields.
-    11. Ensure all data is sourced from high-quality, peer-reviewed databases and cross-validated.
-
-    Return your findings in the specified JSON format.
+    Expert chemist/biologist: Analyze entity, find identifiers and biological data.
+    Entity: "${originalName}" | Hint: "${entityTypeHint}" | Context: "${backgroundInfo || 'None'}"
+    
+    Actions:
+    1. Correct spelling, determine type (chemical/protein/gene).
+    2. Find synonyms.
+    3. Search: PubChem, ChEMBL, KEGG, UniProt, RefSeq, Ensembl, InterPro.
+    4. Provide IDs and direct URLs for UniProt, RefSeq, Ensembl, InterPro.
+    5. Find: Pathways, Function, Cellular Component.
+    6. ${ontologyInstruction}
+    7. If not found, set 'validation_issues' to "No definitive IDs found".
+    
+    JSON ONLY.
     `;
 };
 
