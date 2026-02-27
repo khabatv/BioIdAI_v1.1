@@ -507,10 +507,6 @@ const App: React.FC = () => {
         addLog(`--- Initiating Analysis: ${entityList.length} entities via ${apiProvider} ---`);
         const newResults = await runAnalysis(entityList, false);
         
-        const runId = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-        generateAndDownloadCsv(newResults, `bioid-results-${runId}.csv`);
-        addLog(`Report generated: bioid-results-${runId}.csv`);
-        
         const failedEntities = newResults.filter(r => r["Validation Issues"]);
         if (failedEntities.length > 0 && runningRef.current) {
             setAnalysisPhase('deep_search_pending');
@@ -533,11 +529,7 @@ const App: React.FC = () => {
         setProgress(0);
         
         addLog(`--- Initiating Deep Search: ${failedEntitiesList.length} entities ---`);
-        const finalResults = await runAnalysis(failedEntitiesList, true);
-        
-        const runId = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-        generateAndDownloadCsv(finalResults, `bioid-final-report-${runId}.csv`);
-        addLog(`Final report generated: bioid-final-report-${runId}.csv`);
+        await runAnalysis(failedEntitiesList, true);
         
         setAnalysisPhase('complete');
         runningRef.current = false;
